@@ -112,7 +112,8 @@ def build_decoder(opt, embeddings):
                                    opt.copy_attn,
                                    opt.dropout,
                                    embeddings,
-                                   opt.reuse_copy_attn)
+                                   opt.reuse_copy_attn,
+                                   opt.generator_in_fea_size)
     else:
         return StdRNNDecoder(opt.rnn_type, opt.brnn,
                              opt.dec_layers, opt.dec_rnn_size,
@@ -221,10 +222,16 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
             gen_func = onmt.modules.sparse_activations.LogSparsemax(dim=-1)
         else:
             gen_func = nn.LogSoftmax(dim=-1)
-        generator = nn.Sequential(
-            nn.Linear(model_opt.dec_rnn_size, len(fields["tgt"].vocab)),
-            gen_func
-        )
+        if model_opt.generator_in_fea_size == 0:
+            generator = nn.Sequential(
+                nn.Linear(model_opt.dec_rnn_size, len(fields["tgt"].vocab)),
+                gen_func
+            )
+        else:
+            generator = nn.Sequential(
+                    nn.Linear(model_opt.generator_in_fea_size, len(fields["tgt"].vocab)),
+                    gen_func
+            )
         if model_opt.share_decoder_embeddings:
             generator[0].weight = decoder.embeddings.word_lut.weight
     else:

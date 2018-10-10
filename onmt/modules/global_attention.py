@@ -68,10 +68,11 @@ class GlobalAttention(nn.Module):
     """
 
     def __init__(self, dim, coverage=False, attn_type="dot",
-                 attn_func="softmax"):
+                 attn_func="softmax", generator_in_fea_size=0):
         super(GlobalAttention, self).__init__()
 
         self.dim = dim
+        self.generator_in_fea_size = generator_in_fea_size
         assert attn_type in ["dot", "general", "mlp"], (
             "Please select a valid attention type.")
         self.attn_type = attn_type
@@ -87,7 +88,10 @@ class GlobalAttention(nn.Module):
             self.v = nn.Linear(dim, 1, bias=False)
         # mlp wants it with bias
         out_bias = self.attn_type == "mlp"
-        self.linear_out = nn.Linear(dim * 2, dim, bias=out_bias)
+        if generator_in_fea_size == 0:
+            self.linear_out = nn.Linear(dim * 2, dim, bias=out_bias)
+        else:
+            self.linear_out = nn.Linear(dim * 2, generator_in_fea_size, bias=out_bias)
 
         if coverage:
             self.linear_cover = nn.Linear(1, dim, bias=False)
@@ -195,7 +199,7 @@ class GlobalAttention(nn.Module):
 
         # concatenate
         concat_c = torch.cat([c, source], 2).view(batch*target_l, dim*2)
-        attn_h = self.linear_out(concat_c).view(batch, target_l, dim)
+        attn_h = self.linear_out(concat_c).view(batch, target_l, -1)
         if self.attn_type in ["general", "dot"]:
             attn_h = torch.tanh(attn_h)
 
@@ -206,7 +210,10 @@ class GlobalAttention(nn.Module):
             # Check output sizes
             batch_, dim_ = attn_h.size()
             aeq(batch, batch_)
-            aeq(dim, dim_)
+            if self.generator_in_fea_size == 0:
+                aeq(dim, dim_)
+            else:
+                aeq(self.generator_in_fea_size, dim_)
             batch_, source_l_ = align_vectors.size()
             aeq(batch, batch_)
             aeq(source_l, source_l_)

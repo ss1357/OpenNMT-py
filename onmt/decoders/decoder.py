@@ -60,7 +60,7 @@ class RNNDecoderBase(nn.Module):
                  hidden_size, attn_type="general", attn_func="softmax",
                  coverage_attn=False, context_gate=None,
                  copy_attn=False, dropout=0.0, embeddings=None,
-                 reuse_copy_attn=False):
+                 reuse_copy_attn=False, generator_in_fea_size=0):
         super(RNNDecoderBase, self).__init__()
 
         # Basic attributes.
@@ -70,6 +70,7 @@ class RNNDecoderBase(nn.Module):
         self.hidden_size = hidden_size
         self.embeddings = embeddings
         self.dropout = nn.Dropout(dropout)
+        self.generator_in_fea_size = generator_in_fea_size
 
         # Build the RNN.
         self.rnn = self._build_rnn(rnn_type,
@@ -90,7 +91,8 @@ class RNNDecoderBase(nn.Module):
         self._coverage = coverage_attn
         self.attn = onmt.modules.GlobalAttention(
             hidden_size, coverage=coverage_attn,
-            attn_type=attn_type, attn_func=attn_func
+            attn_type=attn_type, attn_func=attn_func,
+            generator_in_fea_size=self.generator_in_fea_size
         )
 
         # Set up a separated copy attention layer, if needed.
@@ -170,10 +172,12 @@ class RNNDecoderBase(nn.Module):
         if isinstance(encoder_final, tuple):  # LSTM
             return RNNDecoderState(self.hidden_size,
                                    tuple([_fix_enc_hidden(enc_hid)
-                                          for enc_hid in encoder_final]))
+                                          for enc_hid in encoder_final]),
+                                   self.generator_in_fea_size)
         else:  # GRU
             return RNNDecoderState(self.hidden_size,
-                                   _fix_enc_hidden(encoder_final))
+                                   _fix_enc_hidden(encoder_final),
+                                   self.generator_in_fea_size)
 
 
 class StdRNNDecoder(RNNDecoderBase):
@@ -374,7 +378,9 @@ class InputFeedRNNDecoder(RNNDecoderBase):
         """
         Using input feed by concatenating input with attention vectors.
         """
-        return self.embeddings.embedding_size + self.hidden_size
+        if self.generator_in_fea_size == 0:
+            return self.embeddings.embedding_size + self.hidden_size 
+        return self.embeddings.embedding_size + self.generator_in_fea_size
 
 
 class DecoderState(object):
@@ -414,7 +420,7 @@ class DecoderState(object):
 class RNNDecoderState(DecoderState):
     """ Base class for RNN decoder state """
 
-    def __init__(self, hidden_size, rnnstate):
+    def __init__(self, hidden_size, rnnstate, generator_in_fea_size):
         """
         Args:
             hidden_size (int): the size of hidden layer of the decoder.
@@ -429,7 +435,10 @@ class RNNDecoderState(DecoderState):
 
         # Init the input feed.
         batch_size = self.hidden[0].size(1)
-        h_size = (batch_size, hidden_size)
+        if generator_in_fea_size == 0:
+            h_size = (batch_size, hidden_size)
+        else:
+            h_size = (batch_size, generator_in_fea_size)
         self.input_feed = self.hidden[0].data.new(*h_size).zero_() \
                               .unsqueeze(0)
 
